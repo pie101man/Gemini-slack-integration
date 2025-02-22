@@ -4,7 +4,9 @@ import os
 import requests
 from PIL import Image
 from io import BytesIO
+import tempfile # Import tempfile
 
+Stylization = "Your response should be stylized as if it were being viewed in a slack channel"
 AI_Model = "gemini-2.0-flash-exp"
 Image_model = "imagen-3.0-generate-002"
 #Making sure the API key exists in the environment variables
@@ -61,7 +63,14 @@ def generate_image(text):
 
         if response.generated_images:
             generated_image = response.generated_images[0]
-            return generated_image.image.image_bytes
+            image_bytes = generated_image.image.image_bytes
+
+            # Save image to a temporary file
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file: # Save as png for broad compatibility
+                tmp_file.write(image_bytes)
+                tmp_file_path = tmp_file.name # Get the path to the temporary file
+
+            return tmp_file_path # Return the path to the temporary file
         else:
             print("No images generated.")
             return None
