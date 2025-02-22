@@ -1,0 +1,4 @@
+google-generativeai
+slack_sdk
+requests
+Pillow
