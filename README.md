@@ -119,7 +119,7 @@ Before you begin, ensure you have the following:
         (Image attached)
         ```
 
-    *   **Image Generation (Currently Text Response Only):**
+    *   **Image Generation:**
         ```slack
         @your-bot-name generate an image of a futuristic city
         ```
