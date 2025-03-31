@@ -6,7 +6,9 @@ This Python bot connects your Slack workspace to Google's Gemini AI models, allo
 
 *   **Text-Based Queries:**  Mention the bot in Slack and ask any text-based question. The bot will use Gemini AI to generate a response and reply directly in the channel, stylized as a Slack message.
 *   **Image Analysis:**  Upload an image to Slack and mention the bot. The bot can analyze the image and provide insights or answer questions related to it. You can also include text with the image for more context.
-*   **Image Generation:** Use a specific command (you can define this or just use text prompts) to instruct the bot to generate images using Gemini's image generation capabilities and receive the generated image (implementation for sending image back to Slack would need to be added, currently returns image bytes).
+*   **KnowledgeBase Integration:**  Keep your knowledgebase.md file in the directory of the Project, Change 'knowledgebase_report.md' in Gemini_calls.py to your file name, and Use !kb in your message to the bot, with a question in regards to your knowledgebase!
+*   **Image Generation:** Ask the Bot to Make an image, which utilizes Gemini's image generation capabilities and receive the generated image in a thread reply.
+*   **Image Editing:** Attach an image to your bot and ask for changes 'can you make his hair green?'
 *   **Slack Integration:** Seamlessly integrates with Slack using the Slack Socket Mode, allowing real-time interaction without needing a public web server.
 *   **Environment Variable Configuration:** Securely manages API keys using environment variables.
 *   **Error Handling and Logging:** Includes basic error handling and logging to help with debugging and monitoring.
@@ -121,7 +123,15 @@ Before you begin, ensure you have the following:
 
     *   **Image Generation:**
         ```slack
-        @your-bot-name generate an image of a futuristic city
+        @your-bot-name Generate an image of a futuristic city
+        ```
+    *   **Image Editing:**
+        ```slack
+        @your-bot-name Can you make his hair green?
+        ```
+    *   **Knowledge Base Integration:**
+        ```slack
+        @your-bot-name !kb Can you generate a Onboarding letter for X?
         ```
 
 ## Contributing
