@@ -92,7 +92,7 @@ def process_slack_message(web_client: WebClient, event, tracked_chats, bot_user_
     file = event.get("files", "")
     text = event.get("text", "")
     cleaned_text = re.sub(r"<@[\w]+>\s*", "", text).strip()
-    if event_type == "app_mention" or (event_type == "message" and thread_ts in tracked_chats.get(channel_id, {})):
+    if event_type == "app_mention":
         image = None
         print("Processing app_mention or thread message...")
 
