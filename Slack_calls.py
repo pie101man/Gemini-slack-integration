@@ -1,34 +1,59 @@
 from slack_sdk import WebClient
 from slack_sdk.socket_mode import SocketModeClient
 import requests
-from Gemini_Calls import only_image, only_text, text_and_image, generate_image # Import generate_image
+from Gemini_Calls import interact_with_gemini # Updated import
 import os
-import tempfile # Import tempfile for cleanup
-
-# --- Setup and Initialization ---
+import tempfile
+import re
+import io
+from PIL import Image
+slack_token = os.environ.get('SLACK_TOKEN')
 def load_slack_tokens():
-    """Loads Slack tokens from environment variables and initializes Slack clients."""
     slack_token = os.environ.get('SLACK_TOKEN')
     app_token = os.environ.get('SLACK_APP_TOKEN')
 
     if not slack_token:
-        print("Unable to find Slack Auth Bearer Token. Please set SLACK_TOKEN environment variable.")
+        print("Unable to find Slack Auth Bearer Token. Please set SLACK_TOKEN environment variable. Starts with xoxb, this is your Oauth Token")
         exit(1)
     else:
         print("Slack Auth Bearer Token found!")
 
     if not app_token:
-        print("Unable to find Slack App Token. Please set SLACK_APP_TOKEN environment variable.")
+        print("Unable to find Slack App Token. Please set SLACK_APP_TOKEN environment variable. Starts with xapp")
         exit(1)
     else:
         print("Slack App Token found!")
 
     web_client = WebClient(token=slack_token)
     socket_mode_client = SocketModeClient(app_token=app_token, web_client=web_client)
-    return web_client, socket_mode_client, slack_token # Return slack_token as well for later use
+    return web_client, socket_mode_client, slack_token
+
+def add_reaction(web_client,channel_id, ts, reaction_name="thinking_face"):
+    try:
+        web_client.reactions_add(channel=channel_id, name=reaction_name, timestamp=ts)
+    except Exception as e:
+        print(f"Error adding reaction: {e}")
+
+def extract_file(event, slack_token):
+    file = event.get("files", "")
+    private_download_url = file[0]['url_private_download']
+    headers = {'Authorization': f'Bearer {slack_token}'}
+    response = requests.get(private_download_url, headers=headers)
+    file_bytes = response.content
+    image_stream = io.BytesIO(file_bytes)
+    image = Image.open(image_stream)
+    return image
 
 
-# --- Helper Functions for Slack Interaction ---
+def get_or_create_chat_session(channel_id, thread_ts, tracked_chats):
+    if channel_id not in tracked_chats:
+        tracked_chats[channel_id] = {}
+
+    if thread_ts not in tracked_chats[channel_id]:
+        tracked_chats[channel_id][thread_ts] = None
+    return tracked_chats[channel_id].get(thread_ts)
+
+
 def send_slack_message(client: WebClient, channel_id: str, text: str, thread_ts: str=None):
     """Sends a message to a Slack channel."""
     try:
@@ -36,87 +61,103 @@ def send_slack_message(client: WebClient, channel_id: str, text: str, thread_ts:
     except Exception as e:
         print(f"Error sending Slack message: {e}")
 
-def upload_slack_image(client: WebClient, channel_id: str, image_path: str, message: str=None, thread_ts: str=None):
+def upload_slack_image(client, channel_id: str, image_path: str, message: str=None, thread_ts: str=None):
     """Uploads an image file to a Slack channel."""
     try:
-        with open(image_path, 'rb') as image_file:
-            client.files_upload_v2(
-                channel=channel_id,
-                content=image_file.read(),
-                filename="generated_image.png", # You can customize the filename
-                initial_comment=message,
-                thread_ts=thread_ts
-            )
-        print(f"Image uploaded successfully to channel {channel_id}")
+        print(image_path)
+        print(f"message: {message}")
+        print(f"thrad_ts: {thread_ts}")
+        print(f"client: {client}")
+        print(f"channel_id: {channel_id}")
+        response = client.files_upload_v2(
+            channel=channel_id,
+            initial_comment=message,
+            file=image_path,
+            thread_ts=thread_ts
+        )
+        print(response)
+        if response["ok"]:
+            print(f"Image uploaded successfully to channel {channel_id}")
+        else:
+            print(f"Error uploading image: {response['error']}")
     except Exception as e:
         print(f"Error uploading image to Slack: {e}")
-        send_slack_message(client, channel_id, f"Sorry, I ran into an issue uploading the generated image. Error details in logs.", thread_ts=thread_ts)
 
+def process_slack_message(web_client: WebClient, event, tracked_chats, bot_user_id):
+    event_type = event.get("type")
+    channel_id = event.get("channel")
+    thread_ts = event.get("thread_ts")
+    user_id = event.get("user")
+    ts = event.get("ts")
+    file = event.get("files", "")
+    text = event.get("text", "")
+    cleaned_text = re.sub(r"<@[\w]+>\s*", "", text).strip()
+    if event_type == "app_mention" or (event_type == "message" and thread_ts in tracked_chats.get(channel_id, {})):
+        image = None
+        print("Processing app_mention or thread message...")
 
-def download_slack_image(web_client: WebClient, file_id: str, slack_token: str):
-    """Downloads an image file from Slack given its file ID and returns image data and mimetype."""
-    try:
-        file_info_response = web_client.files_info(file=file_id)
-        if file_info_response["ok"]:
-            download_url = file_info_response["file"]["url_private_download"]
-            headers = {"Authorization": f"Bearer {slack_token}"}
-            image_response = requests.get(download_url, headers=headers)
-            if image_response.status_code == 200:
-                mimetype = file_info_response["file"]["mimetype"] # Get mimetype
-                return image_response.content, mimetype # Return both content and mimetype
-            else:
-                print(f"Error downloading image: HTTP status {image_response.status_code}")
-                return None, None # Return None for both if error
+        if user_id == bot_user_id:
+            print("Message sent by bot, ignoring.")
+            return
+
+        session_key = thread_ts or ts
+        chat_session = get_or_create_chat_session(channel_id, thread_ts, tracked_chats)
+
+        try:
+            print("Adding reaction...")
+            add_reaction(web_client,channel_id, ts, reaction_name="thinking_face")
+            print("Reaction added.")
+        except Exception as e:
+            print(f"Error adding reaction: {e}")
+
+        gemini_kwargs = {"chat_session": chat_session}
+        print("Calling interact_with_gemini...")
+
+        if """!kb""" in cleaned_text: gemini_kwargs["use_kb_context"] = True
+
+        if file != '':
+            image = extract_file(event, slack_token)
+            gemini_kwargs["image_bytes"] = image
+
+        gemini_response_parts, updated_chat_session = interact_with_gemini (cleaned_text,**gemini_kwargs)
+
+        try:
+            print("Calling handle_gemini_response_for_slack...")
+            handle_gemini_response_for_slack(web_client, channel_id, ts, gemini_response_parts, user_id)
+        except Exception as e:
+            print(f"Error in handle_gemini_response_for_slack: {e}")
+
+        return channel_id, session_key, updated_chat_session, event_type
+
+def handle_gemini_response_for_slack(web_client, channel_id, ts, gemini_response, user_id):
+    for part in gemini_response:
+        text_content = None
+        is_image = False
+
+        if isinstance(part, str):
+            text_content = part
+
+        elif hasattr(part, 'text') and part.text is not None:
+            text_content = part.text
+
+        elif hasattr(part, 'inline_data') and hasattr(part.inline_data, 'data') and part.inline_data.data is not None:
+            is_image = True
+
+        if text_content is not None:
+            send_slack_message(web_client, channel_id, text_content, ts)
+
+        elif is_image:
+
+            try:
+                tmp_file_path = None
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
+                    tmp_file.write(part.inline_data.data)
+                    tmp_file.flush()
+                    tmp_file_path = tmp_file.name
+                upload_slack_image(web_client, channel_id, tmp_file_path, thread_ts=ts)
+            except Exception as e:
+                print(f"Error processing and uploading image: {e}")
+                send_slack_message(web_client, channel_id, "Error processing image. Sorry!", ts)
+
         else:
-            print(f"Error getting file info from Slack: {file_info_response['error']}")
-            return None, None # Return None for both if error
-    except Exception as e:
-        print(f"Error downloading image: {e}")
-        return None, None # Return None for both if error
-
-
-def process_slack_image_message(web_client: WebClient, event: dict, cleaned_text: str, user_id: str, channel_id: str, ts: str, slack_token: str):
-    """Processes a Slack message that includes an image."""
-    for file_info in event.get("files", []):
-        if file_info["mimetype"].startswith("image/"):
-            image_data, mimetype = download_slack_image(web_client, file_info["id"], slack_token)
-            if image_data:
-                try:
-                    if cleaned_text:
-                        ai_response = text_and_image(cleaned_text, image_data, mimetype)
-                        response_text = f"Hey <@{user_id}>! I received your image and text, here's what the AI thinks:\n\n{ai_response}"
-                    else:
-                        ai_response = only_image(image_data)
-                        response_text = f"Hey <@{user_id}>! I received your image and here's what the AI thinks:\n\n{ai_response}"
-                    send_slack_message(web_client, channel_id, response_text, ts)
-                except Exception as ai_error:
-                    print(f"Error processing image with AI: {ai_error}")
-                    send_slack_message(web_client, channel_id, f"Sorry, I ran into an issue processing the image with AI. Please try again later, <@{user_id}>. Error details in logs.", ts)
-
-            else:
-                send_slack_message(web_client, channel_id, f"Oops! There was an error downloading the image from Slack. Please try again, <@{user_id}>.", thread_ts=ts)
-            return # Exit after processing the first image
-
-
-def process_slack_text_message(web_client: WebClient, event: dict, cleaned_text: str, user_id: str, channel_id: str, ts: str):
-    """Processes a Slack message that is text-only."""
-    if cleaned_text.lower().startswith("generate image of"): # Check for image generation command
-        prompt = cleaned_text[len("generate image of"):].strip() # Extract prompt
-        try:
-            image_path = generate_image(prompt) # Generate the image and get the file path
-            if image_path:
-                upload_slack_image(web_client, channel_id, image_path, message=f"Generated image for: '{prompt}'", thread_ts=ts) # Upload image to Slack
-                os.remove(image_path) # Clean up temporary image file
-            else:
-                send_slack_message(web_client, channel_id, f"Sorry <@{user_id}>, I couldn't generate an image for that prompt.", thread_ts=ts)
-        except Exception as generate_error:
-            print(f"Error during image generation and upload: {generate_error}")
-            send_slack_message(web_client, channel_id, f"Sorry <@{user_id}>, there was an error generating or sending the image. Please check the logs.", thread_ts=ts)
-    else: # Original text processing logic
-        try:
-            ai_response = only_text(cleaned_text)
-            response_text = f"Hey <@{user_id}>! Here is what Gemini says: {ai_response}"
-            send_slack_message(web_client, channel_id, response_text, ts)
-        except Exception as ai_error:
-            print(f"Error processing text with AI: {ai_error}")
-            send_slack_message(web_client, channel_id, f"Sorry, I ran into an issue processing your text with AI. Please try again later, <@{user_id}>. Error details in logs.", ts)
+            send_slack_message(web_client, channel_id, f"Sorry, I might be broken, <@{user_id}>.", ts)
