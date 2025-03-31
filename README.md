@@ -104,34 +104,39 @@ Before you begin, ensure you have the following:
         ```
         The bot will respond with Gemini's answer in the channel.
 
+    *   **Knowledge Base Integration:**
+        ```slack
+        @your-bot-name !kb Can you generate a Onboarding letter for X?
+        ```
+
     *   **Image Analysis:**
         Upload an image to Slack and add a mention:
         ```slack
         @your-bot-name What is in this picture?
+        [imagehere]
         ```
         Or, upload an image without text:
         ```slack
         @your-bot-name
+        [imagehere]
         ```
 
     *   **Text and Image Query:**
         Upload an image and include a text question:
         ```slack
         @your-bot-name  Analyze this image and tell me if this is a healthy plant.
-        (Image attached)
+        [imagehere]
+        ```
+
+    *   **Image Editing:**
+        ```slack
+        @your-bot-name Can you make his hair green?
+        [imagehere]
         ```
 
     *   **Image Generation:**
         ```slack
         @your-bot-name Generate an image of a futuristic city
-        ```
-    *   **Image Editing:**
-        ```slack
-        @your-bot-name Can you make his hair green?
-        ```
-    *   **Knowledge Base Integration:**
-        ```slack
-        @your-bot-name !kb Can you generate a Onboarding letter for X?
         ```
 
 ## Contributing
